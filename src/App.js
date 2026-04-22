@@ -95,7 +95,7 @@ useEffect(() => {
   const [filterShift,setFilterShift]=useState("ALL");
   const [showExcluded,setShowExcluded]=useState("ALL");
   const [loading, setLoading] = useState(false);
-  const [saveStatus,setSaveStatus]=useState("");
+  const [saveStatus]=useState("");
   const [searchPid,setSearchPid]=useState("");
   const [editRow,setEditRow]=useState(null);
   const [datePage,setDataPage]=useState(0);
@@ -211,17 +211,6 @@ useEffect(() => {
       ...map[m],rate:pct(map[m].u30,map[m].total),avg:Math.round(avg(map[m].mins)),med:Math.round(med(map[m].mins))
     }));
   },[activeData,filterUnit,filterShift]);
-
-  const dailyTrend=useMemo(()=>{
-    const map={};
-    dashData.forEach(r=>{
-      if(!r.date)return;
-      if(!map[r.date])map[r.date]={date:r.date,total:0,u30:0};
-      map[r.date].total++;
-      if(r.under30==="YES")map[r.date].u30++;
-    });
-    return Object.values(map).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d,rate:pct(d.u30,d.total),label:d.date.slice(5)}));
-  },[dashData]);
 
   const excludedByReason=useMemo(()=>{
     const map={};
