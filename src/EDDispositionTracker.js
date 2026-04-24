@@ -411,7 +411,15 @@ function EDDispositionTracker() {
                 justifyContent: "center",
               }}
             >
-              <span style={{ color: "#94a3b8", fontSize: 12 }}>LOGO AREA</span>
+              <img
+  src="/hospital-logo.jpg"
+  alt="Hospital Logo"
+  style={{
+    maxWidth: "100%",
+    maxHeight: 60,
+    objectFit: "contain"
+  }}
+/>
             </div>
           </div>
 
