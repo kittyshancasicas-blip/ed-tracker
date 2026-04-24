@@ -229,9 +229,9 @@ function EDDispositionTracker() {
     },
   ];
 
-  const units = ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"];
-  const shifts = ["MORNING", "EVENING", "NIGHT"];
-
+  const units = useMemo(() => ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"], []);
+  const shifts = useMemo(() => ["MORNING", "EVENING", "NIGHT"], []);
+  
   const complianceByUnit = useMemo(() => {
     return units.map((unit) => {
       const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
