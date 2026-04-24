@@ -172,7 +172,7 @@ function EDDispositionTracker() {
       .sort((a, b) => a - b);
     const mid = Math.floor(arr.length / 2);
     return arr.length % 2 ? arr[mid] : Math.round((arr[mid - 1] + arr[mid]) / 2);
-  }, [validMinuteRecords]);
+   }, [validMinuteRecords, units]);
 
   const cards = [
     {
@@ -231,7 +231,7 @@ function EDDispositionTracker() {
 
   const units = useMemo(() => ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"], []);
   const shifts = useMemo(() => ["MORNING", "EVENING", "NIGHT"], []);
-  
+
   const complianceByUnit = useMemo(() => {
     return units.map((unit) => {
       const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
@@ -239,7 +239,7 @@ function EDDispositionTracker() {
       const delayed = unitRecords.filter((r) => r._minutes > 30).length;
       return { unit, within, delayed };
     });
-  }, [validMinuteRecords]);
+    }, [validMinuteRecords, units]);
 
   const avgByUnit = useMemo(() => {
     return units.map((unit) => {
@@ -253,7 +253,7 @@ function EDDispositionTracker() {
           : 0;
       return { unit, avg, count: unitRecords.length };
     });
-  }, [validMinuteRecords]);
+    }, [validMinuteRecords, units]);
 
   const shiftStats = useMemo(() => {
     return shifts.map((s) => {
@@ -269,7 +269,7 @@ function EDDispositionTracker() {
           : 0;
       return { shift: s, total, within, delayed, avg };
     });
-  }, [validMinuteRecords]);
+    }, [validMinuteRecords, units]);
 
   const handleSave = async () => {
     try {
