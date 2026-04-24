@@ -7,6 +7,23 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
+const UNIT_OPTIONS = ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"];
+const SHIFT_OPTIONS = ["MORNING", "EVENING", "NIGHT"];
+const MONTH_OPTIONS = [
+  "JANUARY",
+  "FEBRUARY",
+  "MARCH",
+  "APRIL",
+  "MAY",
+  "JUNE",
+  "JULY",
+  "AUGUST",
+  "SEPTEMBER",
+  "OCTOBER",
+  "NOVEMBER",
+  "DECEMBER",
+];
+
 function EDDispositionTracker() {
   const [view, setView] = useState("overview");
   const [records, setRecords] = useState([]);
@@ -122,8 +139,7 @@ function EDDispositionTracker() {
         _unit: r.edUnit || "",
         _excluded: r.isExcluded === true || r.excludedCase === "Yes",
         _within30:
-          r.within30Min === true ||
-          (mins !== null ? mins <= 30 : false),
+          r.within30Min === true || (mins !== null ? mins <= 30 : false),
       };
     });
   }, [records]);
@@ -134,9 +150,7 @@ function EDDispositionTracker() {
         selectedShift === "All shifts" ||
         r._shift === selectedShift.toUpperCase();
 
-      const unitOk =
-        selectedUnit === "All units" ||
-        r._unit === selectedUnit;
+      const unitOk = selectedUnit === "All units" || r._unit === selectedUnit;
 
       const monthOk =
         selectedMonth === "All months" ||
@@ -172,7 +186,7 @@ function EDDispositionTracker() {
       .sort((a, b) => a - b);
     const mid = Math.floor(arr.length / 2);
     return arr.length % 2 ? arr[mid] : Math.round((arr[mid - 1] + arr[mid]) / 2);
-   }, [validMinuteRecords, units]);
+  }, [validMinuteRecords]);
 
   const cards = [
     {
@@ -229,20 +243,17 @@ function EDDispositionTracker() {
     },
   ];
 
-  const units = useMemo(() => ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"], []);
-  const shifts = useMemo(() => ["MORNING", "EVENING", "NIGHT"], []);
-
   const complianceByUnit = useMemo(() => {
-    return units.map((unit) => {
+    return UNIT_OPTIONS.map((unit) => {
       const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
       const within = unitRecords.filter((r) => r._within30).length;
       const delayed = unitRecords.filter((r) => r._minutes > 30).length;
       return { unit, within, delayed };
     });
-    }, [validMinuteRecords, units]);
+  }, [validMinuteRecords]);
 
   const avgByUnit = useMemo(() => {
-    return units.map((unit) => {
+    return UNIT_OPTIONS.map((unit) => {
       const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
       const avg =
         unitRecords.length > 0
@@ -253,10 +264,10 @@ function EDDispositionTracker() {
           : 0;
       return { unit, avg, count: unitRecords.length };
     });
-    }, [validMinuteRecords, units]);
+  }, [validMinuteRecords]);
 
   const shiftStats = useMemo(() => {
-    return shifts.map((s) => {
+    return SHIFT_OPTIONS.map((s) => {
       const shiftRecords = validMinuteRecords.filter((r) => r._shift === s);
       const total = shiftRecords.length;
       const within = shiftRecords.filter((r) => r._within30).length;
@@ -269,7 +280,7 @@ function EDDispositionTracker() {
           : 0;
       return { shift: s, total, within, delayed, avg };
     });
-    }, [validMinuteRecords, units]);
+  }, [validMinuteRecords]);
 
   const handleSave = async () => {
     try {
@@ -383,7 +394,12 @@ function EDDispositionTracker() {
         }}
       >
         <div>
-          <div style={{ padding: 14, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div
+            style={{
+              padding: 14,
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
             <div
               style={{
                 background: "white",
@@ -420,7 +436,12 @@ function EDDispositionTracker() {
           <NavItem onClick={handleExportCsv}>Export CSV</NavItem>
         </div>
 
-        <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+        <div
+          style={{
+            padding: 16,
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
           <div style={{ color: "#7ea0c8", fontWeight: 700, fontSize: 13 }}>
             ED DISPOSITION TRACKER
           </div>
@@ -450,33 +471,19 @@ function EDDispositionTracker() {
             >
               <FilterBox
                 label="Shift"
-                options={["All shifts", "MORNING", "EVENING", "NIGHT"]}
+                options={["All shifts", ...SHIFT_OPTIONS]}
                 value={selectedShift}
                 onChange={setSelectedShift}
               />
               <FilterBox
                 label="ED Unit"
-                options={["All units", "CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"]}
+                options={["All units", ...UNIT_OPTIONS]}
                 value={selectedUnit}
                 onChange={setSelectedUnit}
               />
               <FilterBox
                 label="Month"
-                options={[
-                  "All months",
-                  "JANUARY",
-                  "FEBRUARY",
-                  "MARCH",
-                  "APRIL",
-                  "MAY",
-                  "JUNE",
-                  "JULY",
-                  "AUGUST",
-                  "SEPTEMBER",
-                  "OCTOBER",
-                  "NOVEMBER",
-                  "DECEMBER",
-                ]}
+                options={["All months", ...MONTH_OPTIONS]}
                 value={selectedMonth}
                 onChange={setSelectedMonth}
               />
@@ -561,58 +568,28 @@ function EDDispositionTracker() {
                 <Legend />
               </ChartBox>
 
-              <ChartBox
-                title="Average Time by Unit"
-                subtitle="Lower is better"
-              >
+              <ChartBox title="Average Time by Unit" subtitle="Lower is better">
                 <AvgUnitChart data={avgByUnit} />
               </ChartBox>
             </div>
 
-            <div
-              style={{
-                background: "white",
-                borderRadius: 16,
-                boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-                overflowX: "auto",
-              }}
-            >
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-                    <th style={thStyle}>ED Unit</th>
-                    <th style={thStyle}>Total Cases</th>
-                    <th style={thStyle}>Within 30 Min</th>
-                    <th style={thStyle}>Delayed</th>
-                    <th style={thStyle}>Avg Time (min)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {units.map((unit) => {
-                    const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
-                    const within = unitRecords.filter((r) => r._within30).length;
-                    const delayed = unitRecords.filter((r) => r._minutes > 30).length;
-                    const avg =
-                      unitRecords.length > 0
-                        ? Math.round(
-                            unitRecords.reduce((sum, r) => sum + r._minutes, 0) /
-                              unitRecords.length
-                          )
-                        : 0;
+            <DataTable
+              headers={["ED Unit", "Total Cases", "Within 30 Min", "Delayed", "Avg Time (min)"]}
+              rows={UNIT_OPTIONS.map((unit) => {
+                const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
+                const within = unitRecords.filter((r) => r._within30).length;
+                const delayed = unitRecords.filter((r) => r._minutes > 30).length;
+                const avg =
+                  unitRecords.length > 0
+                    ? Math.round(
+                        unitRecords.reduce((sum, r) => sum + r._minutes, 0) /
+                          unitRecords.length
+                      )
+                    : 0;
 
-                    return (
-                      <tr key={unit} style={{ borderTop: "1px solid #e5e7eb" }}>
-                        <td style={tdStyle}>{unit}</td>
-                        <td style={tdStyle}>{unitRecords.length}</td>
-                        <td style={tdStyle}>{within}</td>
-                        <td style={tdStyle}>{delayed}</td>
-                        <td style={tdStyle}>{avg}m</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                return [unit, unitRecords.length, within, delayed, `${avg}m`];
+              })}
+            />
           </div>
         )}
 
@@ -639,7 +616,14 @@ function EDDispositionTracker() {
                   <div style={{ fontSize: 14, fontWeight: 800, color: "#64748b" }}>
                     {item.shift}
                   </div>
-                  <div style={{ fontSize: 42, fontWeight: 900, color: "#0f172a", marginTop: 8 }}>
+                  <div
+                    style={{
+                      fontSize: 42,
+                      fontWeight: 900,
+                      color: "#0f172a",
+                      marginTop: 8,
+                    }}
+                  >
                     {item.total}
                   </div>
                   <div style={{ marginTop: 10, color: "#64748b", fontSize: 14 }}>
@@ -655,37 +639,16 @@ function EDDispositionTracker() {
               ))}
             </div>
 
-            <div
-              style={{
-                background: "white",
-                borderRadius: 16,
-                boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-                overflowX: "auto",
-              }}
-            >
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-                    <th style={thStyle}>Shift</th>
-                    <th style={thStyle}>Total Cases</th>
-                    <th style={thStyle}>Within 30 Min</th>
-                    <th style={thStyle}>Delayed</th>
-                    <th style={thStyle}>Avg Time (min)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shiftStats.map((item) => (
-                    <tr key={item.shift} style={{ borderTop: "1px solid #e5e7eb" }}>
-                      <td style={tdStyle}>{item.shift}</td>
-                      <td style={tdStyle}>{item.total}</td>
-                      <td style={tdStyle}>{item.within}</td>
-                      <td style={tdStyle}>{item.delayed}</td>
-                      <td style={tdStyle}>{item.avg}m</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              headers={["Shift", "Total Cases", "Within 30 Min", "Delayed", "Avg Time (min)"]}
+              rows={shiftStats.map((item) => [
+                item.shift,
+                item.total,
+                item.within,
+                item.delayed,
+                `${item.avg}m`,
+              ])}
+            />
           </div>
         )}
 
@@ -703,20 +666,32 @@ function EDDispositionTracker() {
                 overflowX: "auto",
               }}
             >
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  minWidth: 1100,
+                }}
+              >
                 <thead>
                   <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-                    <th style={thStyle}>Date</th>
-                    <th style={thStyle}>Shift</th>
-                    <th style={thStyle}>Patient ID</th>
-                    <th style={thStyle}>ED Unit</th>
-                    <th style={thStyle}>Admitting Unit</th>
-                    <th style={thStyle}>Disp Min</th>
-                    <th style={thStyle}>Disp H:MM:SS</th>
-                    <th style={thStyle}>Delay</th>
-                    <th style={thStyle}>≤30 Min</th>
-                    <th style={thStyle}>Excluded</th>
-                    <th style={thStyle}>Month</th>
+                    {[
+                      "Date",
+                      "Shift",
+                      "Patient ID",
+                      "ED Unit",
+                      "Admitting Unit",
+                      "Disp Min",
+                      "Disp H:MM:SS",
+                      "Delay",
+                      "≤30 Min",
+                      "Excluded",
+                      "Month",
+                    ].map((header) => (
+                      <th key={header} style={thStyle}>
+                        {header}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -804,9 +779,9 @@ function EDDispositionTracker() {
                       onChange={(e) => setShift(e.target.value)}
                       style={inputStyle}
                     >
-                      <option>MORNING</option>
-                      <option>EVENING</option>
-                      <option>NIGHT</option>
+                      {SHIFT_OPTIONS.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
                     </select>
                   </Field>
 
@@ -826,11 +801,9 @@ function EDDispositionTracker() {
                       onChange={(e) => setEdUnit(e.target.value)}
                       style={inputStyle}
                     >
-                      <option>CCA</option>
-                      <option>CCB</option>
-                      <option>CCC</option>
-                      <option>CCD</option>
-                      <option>Triage/Pulmo</option>
+                      {UNIT_OPTIONS.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
                     </select>
                   </Field>
 
@@ -840,15 +813,11 @@ function EDDispositionTracker() {
                       onChange={(e) => setAdmittingUnit(e.target.value)}
                       style={inputStyle}
                     >
-                      <option>T1A5</option>
-                      <option>T1A1</option>
-                      <option>T1B1</option>
-                      <option>T1A6</option>
-                      <option>300G</option>
-                      <option>300B</option>
-                      <option>300D</option>
-                      <option>200A</option>
-                      <option>ONCO</option>
+                      {["T1A5", "T1A1", "T1B1", "T1A6", "300G", "300B", "300D", "200A", "ONCO"].map(
+                        (item) => (
+                          <option key={item}>{item}</option>
+                        )
+                      )}
                     </select>
                   </Field>
 
@@ -894,7 +863,12 @@ function EDDispositionTracker() {
                   </Field>
 
                   <Field label="WHATSAPP DELAY (MINUTES)">
-                    <input type="text" value={whatsappDelayMinutes} readOnly style={inputStyleReadOnly} />
+                    <input
+                      type="text"
+                      value={whatsappDelayMinutes}
+                      readOnly
+                      style={inputStyleReadOnly}
+                    />
                   </Field>
 
                   <Field label="DELAY CATEGORY (AUTO)">
@@ -1061,15 +1035,56 @@ function Header({ title, subtitle, onAdd }) {
   );
 }
 
-function StackedUnitChart({ data }) {
+function DataTable({ headers, rows }) {
   return (
-    <div style={{ display: "flex", gap: 24, alignItems: "flex-end", height: 250, padding: "10px 20px 0" }}>
+    <div
+      style={{
+        background: "white",
+        borderRadius: 16,
+        boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+        overflowX: "auto",
+      }}
+    >
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+        <thead>
+          <tr style={{ background: "#f8fafc", textAlign: "left" }}>
+            {headers.map((header) => (
+              <th key={header} style={thStyle}>
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={rowIndex} style={{ borderTop: "1px solid #e5e7eb" }}>
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex} style={tdStyle}>
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StackedUnitChart({ data }) {
+  const max = Math.max(1, ...data.map((d) => d.within + d.delayed), 800);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 24,
+        alignItems: "flex-end",
+        height: 250,
+        padding: "10px 20px 0",
+      }}
+    >
       {data.map((item) => {
-        const max = Math.max(
-          1,
-          ...data.map((d) => d.within + d.delayed),
-          800
-        );
         const greenHeight = ((item.within || 0) / max) * 180;
         const redHeight = ((item.delayed || 0) / max) * 180;
 
@@ -1090,7 +1105,9 @@ function StackedUnitChart({ data }) {
               <div style={{ height: greenHeight, background: "#22c55e" }} />
               <div style={{ height: redHeight, background: "#ef4444" }} />
             </div>
-            <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>{item.unit}</div>
+            <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>
+              {item.unit}
+            </div>
           </div>
         );
       })}
@@ -1100,7 +1117,15 @@ function StackedUnitChart({ data }) {
 
 function AvgUnitChart({ data }) {
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-end", height: 250, padding: "10px 20px 0" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: 18,
+        alignItems: "flex-end",
+        height: 250,
+        padding: "10px 20px 0",
+      }}
+    >
       {data.map((item, idx) => {
         const colors = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
         return (
@@ -1115,7 +1140,9 @@ function AvgUnitChart({ data }) {
                 background: colors[idx % colors.length],
               }}
             />
-            <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>{item.unit}</div>
+            <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>
+              {item.unit}
+            </div>
           </div>
         );
       })}
@@ -1148,11 +1175,7 @@ function FilterBox({ label, options, value, onChange }) {
   return (
     <div>
       <div style={{ fontWeight: 700, marginBottom: 8, color: "#475569" }}>{label}</div>
-      <select
-        style={filterInputStyle}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
+      <select style={filterInputStyle} value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((item) => (
           <option key={item}>{item}</option>
         ))}
@@ -1214,7 +1237,15 @@ function ChartBox({ title, subtitle, children }) {
 
 function Legend() {
   return (
-    <div style={{ display: "flex", justifyContent: "center", gap: 18, marginTop: 14, fontSize: 13 }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        gap: 18,
+        marginTop: 14,
+        fontSize: 13,
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ width: 16, height: 12, background: "#ef4444", display: "inline-block" }} />
         <span style={{ color: "#64748b" }}>Delayed</span>
