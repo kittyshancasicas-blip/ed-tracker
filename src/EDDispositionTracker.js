@@ -11,6 +11,10 @@ function EDDispositionTracker() {
   const [view, setView] = useState("overview");
   const [records, setRecords] = useState([]);
 
+  const [selectedShift, setSelectedShift] = useState("All shifts");
+  const [selectedUnit, setSelectedUnit] = useState("All units");
+  const [selectedMonth, setSelectedMonth] = useState("All months");
+
   const [dateOfBedAllocation, setDateOfBedAllocation] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -74,31 +78,112 @@ function EDDispositionTracker() {
     return d.toLocaleString("en-US", { month: "long" }).toUpperCase();
   }, [dateOfBedAllocation]);
 
-  const totalAdmissions = records.length;
-  const within30 = records.filter((r) => r.within30Min === true).length;
-  const delayedOver30 = records.filter(
-    (r) => Number(r.dispositionMinutes || 0) > 30
-  ).length;
-  const over60 = records.filter(
-    (r) => Number(r.dispositionMinutes || 0) > 60
-  ).length;
-  const excludedCases = records.filter((r) => r.isExcluded === true).length;
+  const getRecordMinutes = (record) => {
+    if (
+      record.dispositionMinutes !== undefined &&
+      record.dispositionMinutes !== null &&
+      record.dispositionMinutes !== ""
+    ) {
+      const mins = Number(record.dispositionMinutes);
+      return Number.isFinite(mins) ? mins : null;
+    }
+
+    if (record.admittedAt && record.transferredAt) {
+      const start = new Date(record.admittedAt);
+      const end = new Date(record.transferredAt);
+
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        const diff = (end - start) / 60000;
+        if (Number.isFinite(diff) && diff >= 0 && diff < 10000) {
+          return diff;
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const normalizedRecords = useMemo(() => {
+    return records.map((r) => {
+      const mins = getRecordMinutes(r);
+      const normalizedMonth =
+        r.month ||
+        (r.dateOfBedAllocation
+          ? new Date(r.dateOfBedAllocation)
+              .toLocaleString("en-US", { month: "long" })
+              .toUpperCase()
+          : "");
+
+      return {
+        ...r,
+        _minutes: mins,
+        _month: normalizedMonth,
+        _shift: (r.shift || "").toUpperCase(),
+        _unit: r.edUnit || "",
+        _excluded: r.isExcluded === true || r.excludedCase === "Yes",
+        _within30:
+          r.within30Min === true ||
+          (mins !== null ? mins <= 30 : false),
+      };
+    });
+  }, [records]);
+
+  const filteredRecords = useMemo(() => {
+    return normalizedRecords.filter((r) => {
+      const shiftOk =
+        selectedShift === "All shifts" ||
+        r._shift === selectedShift.toUpperCase();
+
+      const unitOk =
+        selectedUnit === "All units" ||
+        r._unit === selectedUnit;
+
+      const monthOk =
+        selectedMonth === "All months" ||
+        r._month === selectedMonth.toUpperCase();
+
+      return shiftOk && unitOk && monthOk;
+    });
+  }, [normalizedRecords, selectedShift, selectedUnit, selectedMonth]);
+
+  const validMinuteRecords = useMemo(
+    () => filteredRecords.filter((r) => r._minutes !== null),
+    [filteredRecords]
+  );
+
+  const totalAdmissions = filteredRecords.length;
+  const within30 = validMinuteRecords.filter((r) => r._within30).length;
+  const delayedOver30 = validMinuteRecords.filter((r) => r._minutes > 30).length;
+  const over60 = validMinuteRecords.filter((r) => r._minutes > 60).length;
+  const excludedCases = filteredRecords.filter((r) => r._excluded).length;
 
   const avgTransfer =
-    records.length > 0
+    validMinuteRecords.length > 0
       ? Math.round(
-          records.reduce(
-            (sum, r) => sum + Number(r.dispositionMinutes || 0),
-            0
-          ) / records.length
+          validMinuteRecords.reduce((sum, r) => sum + r._minutes, 0) /
+            validMinuteRecords.length
         )
       : 0;
 
+  const medianTransfer = useMemo(() => {
+    if (!validMinuteRecords.length) return 0;
+    const arr = validMinuteRecords
+      .map((r) => r._minutes)
+      .sort((a, b) => a - b);
+    const mid = Math.floor(arr.length / 2);
+    return arr.length % 2 ? arr[mid] : Math.round((arr[mid - 1] + arr[mid]) / 2);
+  }, [validMinuteRecords]);
+
   const cards = [
-    { title: "TOTAL ADMISSIONS", value: totalAdmissions, sub: `${excludedCases} excluded`, accent: "#3b82f6" },
+    {
+      title: "TOTAL ADMISSIONS",
+      value: totalAdmissions.toLocaleString(),
+      sub: `${excludedCases} excluded`,
+      accent: "#3b82f6",
+    },
     {
       title: "WITHIN 30 MIN",
-      value: within30,
+      value: within30.toLocaleString(),
       sub:
         totalAdmissions > 0
           ? `${((within30 / totalAdmissions) * 100).toFixed(1)}% compliance`
@@ -108,7 +193,7 @@ function EDDispositionTracker() {
     },
     {
       title: "DELAYED (>30 MIN)",
-      value: delayedOver30,
+      value: delayedOver30.toLocaleString(),
       sub:
         totalAdmissions > 0
           ? `${((delayedOver30 / totalAdmissions) * 100).toFixed(1)}% of total`
@@ -119,13 +204,13 @@ function EDDispositionTracker() {
     {
       title: "AVG TRANSFER TIME",
       value: `${avgTransfer}m`,
-      sub: "Median 25m",
+      sub: `Median ${medianTransfer}m`,
       accent: "#f59e0b",
       subColor: "#f59e0b",
     },
     {
       title: ">60 MIN CASES",
-      value: over60,
+      value: over60.toLocaleString(),
       sub:
         totalAdmissions > 0
           ? `${((over60 / totalAdmissions) * 100).toFixed(1)}%`
@@ -135,7 +220,7 @@ function EDDispositionTracker() {
     },
     {
       title: "EXCLUDED CASES",
-      value: excludedCases,
+      value: excludedCases.toLocaleString(),
       sub:
         totalAdmissions > 0
           ? `${((excludedCases / totalAdmissions) * 100).toFixed(1)}% of all records`
@@ -144,34 +229,47 @@ function EDDispositionTracker() {
     },
   ];
 
+  const units = ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"];
+  const shifts = ["MORNING", "EVENING", "NIGHT"];
+
   const complianceByUnit = useMemo(() => {
-    const units = ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"];
     return units.map((unit) => {
-      const unitRecords = records.filter((r) => r.edUnit === unit);
-      const within = unitRecords.filter((r) => r.within30Min === true).length;
-      const delayed = unitRecords.filter(
-        (r) => Number(r.dispositionMinutes || 0) > 30
-      ).length;
+      const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
+      const within = unitRecords.filter((r) => r._within30).length;
+      const delayed = unitRecords.filter((r) => r._minutes > 30).length;
       return { unit, within, delayed };
     });
-  }, [records]);
+  }, [validMinuteRecords]);
 
   const avgByUnit = useMemo(() => {
-    const units = ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"];
     return units.map((unit) => {
-      const unitRecords = records.filter((r) => r.edUnit === unit);
+      const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
       const avg =
         unitRecords.length > 0
           ? Math.round(
-              unitRecords.reduce(
-                (sum, r) => sum + Number(r.dispositionMinutes || 0),
-                0
-              ) / unitRecords.length
+              unitRecords.reduce((sum, r) => sum + r._minutes, 0) /
+                unitRecords.length
             )
           : 0;
-      return { unit, avg };
+      return { unit, avg, count: unitRecords.length };
     });
-  }, [records]);
+  }, [validMinuteRecords]);
+
+  const shiftStats = useMemo(() => {
+    return shifts.map((s) => {
+      const shiftRecords = validMinuteRecords.filter((r) => r._shift === s);
+      const total = shiftRecords.length;
+      const within = shiftRecords.filter((r) => r._within30).length;
+      const delayed = shiftRecords.filter((r) => r._minutes > 30).length;
+      const avg =
+        total > 0
+          ? Math.round(
+              shiftRecords.reduce((sum, r) => sum + r._minutes, 0) / total
+            )
+          : 0;
+      return { shift: s, total, within, delayed, avg };
+    });
+  }, [validMinuteRecords]);
 
   const handleSave = async () => {
     try {
@@ -217,6 +315,61 @@ function EDDispositionTracker() {
     }
   };
 
+  const handleExportCsv = () => {
+    if (!filteredRecords.length) {
+      alert("No records to export.");
+      return;
+    }
+
+    const headers = [
+      "Date",
+      "Shift",
+      "Patient ID",
+      "ED Unit",
+      "Admitting Unit",
+      "Disposition Minutes",
+      "Disposition H:MM:SS",
+      "Delay Category",
+      "Within 30 Min",
+      "Excluded",
+      "Exclusion Reason",
+      "Month",
+    ];
+
+    const rows = filteredRecords.map((r) => [
+      r.dateOfBedAllocation || "",
+      r.shift || "",
+      r.patientId || "",
+      r.edUnit || "",
+      r.admittingUnit || "",
+      r._minutes ?? "",
+      r.dispositionHms || "",
+      r.delayCategory || "",
+      r._within30 ? "YES" : "NO",
+      r._excluded ? "YES" : "NO",
+      r.exclusionReason || "",
+      r._month || "",
+    ]);
+
+    const csv = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "ed_disposition_records.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#eef3f8" }}>
       <aside
@@ -247,166 +400,175 @@ function EDDispositionTracker() {
           </div>
 
           <div style={sectionLabel}>NAVIGATION</div>
-          <NavItem active={view === "overview"} onClick={() => setView("overview")}>Overview</NavItem>
-          <NavItem onClick={() => {}}>Unit Performance</NavItem>
-          <NavItem onClick={() => {}}>Shift Analysis</NavItem>
-          <NavItem active={view === "log"} onClick={() => setView("log")}>Disposition Log</NavItem>
+          <NavItem active={view === "overview"} onClick={() => setView("overview")}>
+            Overview
+          </NavItem>
+          <NavItem active={view === "unit"} onClick={() => setView("unit")}>
+            Unit Performance
+          </NavItem>
+          <NavItem active={view === "shift"} onClick={() => setView("shift")}>
+            Shift Analysis
+          </NavItem>
+          <NavItem active={view === "log"} onClick={() => setView("log")}>
+            Disposition Log
+          </NavItem>
 
           <div style={sectionLabel}>ACTIONS</div>
-          <NavItem active={view === "add"} onClick={() => setView("add")}>Add Record</NavItem>
-          <NavItem onClick={() => {}}>Export CSV</NavItem>
+          <NavItem active={view === "add"} onClick={() => setView("add")}>
+            Add Record
+          </NavItem>
+          <NavItem onClick={handleExportCsv}>Export CSV</NavItem>
         </div>
 
         <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <div style={{ color: "#7ea0c8", fontWeight: 700, fontSize: 13 }}>ED DISPOSITION TRACKER</div>
+          <div style={{ color: "#7ea0c8", fontWeight: 700, fontSize: 13 }}>
+            ED DISPOSITION TRACKER
+          </div>
           <div style={{ color: "#7ea0c8", fontSize: 12, marginTop: 4 }}>
-            Total: {records.length.toLocaleString()} records
+            Total: {filteredRecords.length.toLocaleString()} records
           </div>
         </div>
       </aside>
 
       <main style={{ flex: 1, background: "#eef3f8" }}>
-        {view === "overview" && (
-          <>
+        <Header
+          title="ED Disposition Monitor"
+          subtitle={`All months · ${filteredRecords.length.toLocaleString()} dispositions · King Saud Medical City`}
+          onAdd={() => setView("add")}
+        />
+
+        {view !== "add" && (
+          <div style={{ padding: 28, paddingBottom: 0 }}>
             <div
               style={{
-                background: "white",
-                borderBottom: "1px solid #dbe4ee",
-                padding: "12px 28px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr auto",
+                gap: 16,
+                alignItems: "end",
+                marginBottom: 22,
               }}
             >
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
-                  ED Disposition Monitor
-                </div>
-                <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
-                  All months · {records.length.toLocaleString()} dispositions · King Saud Medical City
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                <div style={{ color: "#16a34a", fontWeight: 700 }}>● Live</div>
-                <button onClick={() => setView("add")} style={primaryBtn}>
-                  + Add Record
-                </button>
-              </div>
-            </div>
-
-            <div style={{ padding: 28 }}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr 1fr auto",
-                  gap: 16,
-                  alignItems: "end",
-                  marginBottom: 22,
-                }}
-              >
-                <FilterBox label="Shift" options={["All shifts", "Morning", "Evening", "Night"]} />
-                <FilterBox label="ED Unit" options={["All units", "CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"]} />
-                <FilterBox label="Month" options={["All months", "January", "February", "March", "April"]} />
-                <div style={{ justifySelf: "end", fontSize: 14, color: "#64748b" }}>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{records.length.toLocaleString()}</span> active records
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(5, minmax(180px, 1fr))",
-                  gap: 16,
-                  marginBottom: 16,
-                }}
-              >
-                {cards.slice(0, 5).map((card) => (
-                  <Card key={card.title} card={card} />
-                ))}
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(180px, 1fr) 4fr",
-                  gap: 16,
-                  marginBottom: 28,
-                }}
-              >
-                <Card card={cards[5]} />
-                <div />
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1.2fr 1fr",
-                  gap: 18,
-                  marginBottom: 22,
-                }}
-              >
-                <ChartBox title="Compliance vs Delayed by ED Unit" subtitle="Green = ≤30 min · Red = >30 min">
-                  <div style={{ display: "flex", gap: 24, alignItems: "flex-end", height: 250, padding: "10px 20px 0" }}>
-                    {complianceByUnit.map((item) => {
-                      const max = 800;
-                      const greenHeight = (item.within / max) * 180;
-                      const redHeight = (item.delayed / max) * 180;
-                      return (
-                        <div key={item.unit} style={{ flex: 1, textAlign: "center" }}>
-                          <div
-                            style={{
-                              margin: "0 auto",
-                              width: 72,
-                              height: 180,
-                              display: "flex",
-                              flexDirection: "column-reverse",
-                              borderRadius: 6,
-                              overflow: "hidden",
-                              background: "#f1f5f9",
-                            }}
-                          >
-                            <div title={`Within 30 min: ${item.within}`} style={{ height: greenHeight, background: "#22c55e" }} />
-                            <div title={`Delayed: ${item.delayed}`} style={{ height: redHeight, background: "#ef4444" }} />
-                          </div>
-                          <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>{item.unit}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <Legend />
-                </ChartBox>
-
-                <ChartBox title="Avg Disposition Time per Unit (min)" subtitle="30-min target line shown">
-                  <div style={{ display: "flex", gap: 18, alignItems: "flex-end", height: 250, padding: "10px 20px 0" }}>
-                    {avgByUnit.map((item, idx) => {
-                      const colors = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
-                      return (
-                        <div key={item.unit} style={{ flex: 1, textAlign: "center" }}>
-                          <div
-                            style={{
-                              margin: "0 auto",
-                              width: 76,
-                              height: Math.max(item.avg * 4, 10),
-                              maxHeight: 180,
-                              borderRadius: 6,
-                              background: colors[idx % colors.length],
-                            }}
-                          />
-                          <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>{item.unit}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </ChartBox>
+              <FilterBox
+                label="Shift"
+                options={["All shifts", "MORNING", "EVENING", "NIGHT"]}
+                value={selectedShift}
+                onChange={setSelectedShift}
+              />
+              <FilterBox
+                label="ED Unit"
+                options={["All units", "CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"]}
+                value={selectedUnit}
+                onChange={setSelectedUnit}
+              />
+              <FilterBox
+                label="Month"
+                options={[
+                  "All months",
+                  "JANUARY",
+                  "FEBRUARY",
+                  "MARCH",
+                  "APRIL",
+                  "MAY",
+                  "JUNE",
+                  "JULY",
+                  "AUGUST",
+                  "SEPTEMBER",
+                  "OCTOBER",
+                  "NOVEMBER",
+                  "DECEMBER",
+                ]}
+                value={selectedMonth}
+                onChange={setSelectedMonth}
+              />
+              <div style={{ justifySelf: "end", fontSize: 14, color: "#64748b" }}>
+                <span style={{ fontWeight: 800, color: "#0f172a" }}>
+                  {filteredRecords.length.toLocaleString()}
+                </span>{" "}
+                active records
               </div>
             </div>
-          </>
+          </div>
         )}
 
-        {view === "log" && (
-          <div style={{ padding: 28 }}>
-            <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Disposition Log</div>
+        {view === "overview" && (
+          <div style={{ padding: 28, paddingTop: 0 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(5, minmax(180px, 1fr))",
+                gap: 16,
+                marginBottom: 16,
+              }}
+            >
+              {cards.slice(0, 5).map((card) => (
+                <Card key={card.title} card={card} />
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(180px, 1fr) 4fr",
+                gap: 16,
+                marginBottom: 28,
+              }}
+            >
+              <Card card={cards[5]} />
+              <div />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.2fr 1fr",
+                gap: 18,
+                marginBottom: 22,
+              }}
+            >
+              <ChartBox
+                title="Compliance vs Delayed by ED Unit"
+                subtitle="Green = ≤30 min · Red = >30 min"
+              >
+                <StackedUnitChart data={complianceByUnit} />
+                <Legend />
+              </ChartBox>
+
+              <ChartBox
+                title="Avg Disposition Time per Unit (min)"
+                subtitle="30-min target line shown"
+              >
+                <AvgUnitChart data={avgByUnit} />
+              </ChartBox>
+            </div>
+          </div>
+        )}
+
+        {view === "unit" && (
+          <div style={{ padding: 28, paddingTop: 0 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(300px, 1fr))",
+                gap: 18,
+                marginBottom: 22,
+              }}
+            >
+              <ChartBox
+                title="Unit Compliance Comparison"
+                subtitle="Within 30 min vs delayed cases"
+              >
+                <StackedUnitChart data={complianceByUnit} />
+                <Legend />
+              </ChartBox>
+
+              <ChartBox
+                title="Average Time by Unit"
+                subtitle="Lower is better"
+              >
+                <AvgUnitChart data={avgByUnit} />
+              </ChartBox>
+            </div>
+
             <div
               style={{
                 background: "white",
@@ -415,7 +577,133 @@ function EDDispositionTracker() {
                 overflowX: "auto",
               }}
             >
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1000 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc", textAlign: "left" }}>
+                    <th style={thStyle}>ED Unit</th>
+                    <th style={thStyle}>Total Cases</th>
+                    <th style={thStyle}>Within 30 Min</th>
+                    <th style={thStyle}>Delayed</th>
+                    <th style={thStyle}>Avg Time (min)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {units.map((unit) => {
+                    const unitRecords = validMinuteRecords.filter((r) => r._unit === unit);
+                    const within = unitRecords.filter((r) => r._within30).length;
+                    const delayed = unitRecords.filter((r) => r._minutes > 30).length;
+                    const avg =
+                      unitRecords.length > 0
+                        ? Math.round(
+                            unitRecords.reduce((sum, r) => sum + r._minutes, 0) /
+                              unitRecords.length
+                          )
+                        : 0;
+
+                    return (
+                      <tr key={unit} style={{ borderTop: "1px solid #e5e7eb" }}>
+                        <td style={tdStyle}>{unit}</td>
+                        <td style={tdStyle}>{unitRecords.length}</td>
+                        <td style={tdStyle}>{within}</td>
+                        <td style={tdStyle}>{delayed}</td>
+                        <td style={tdStyle}>{avg}m</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {view === "shift" && (
+          <div style={{ padding: 28, paddingTop: 0 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(220px, 1fr))",
+                gap: 16,
+                marginBottom: 22,
+              }}
+            >
+              {shiftStats.map((item) => (
+                <div
+                  key={item.shift}
+                  style={{
+                    background: "white",
+                    borderRadius: 16,
+                    padding: 20,
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#64748b" }}>
+                    {item.shift}
+                  </div>
+                  <div style={{ fontSize: 42, fontWeight: 900, color: "#0f172a", marginTop: 8 }}>
+                    {item.total}
+                  </div>
+                  <div style={{ marginTop: 10, color: "#64748b", fontSize: 14 }}>
+                    Within 30 min: <strong>{item.within}</strong>
+                  </div>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 14 }}>
+                    Delayed: <strong>{item.delayed}</strong>
+                  </div>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 14 }}>
+                    Avg time: <strong>{item.avg}m</strong>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div
+              style={{
+                background: "white",
+                borderRadius: 16,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+                overflowX: "auto",
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc", textAlign: "left" }}>
+                    <th style={thStyle}>Shift</th>
+                    <th style={thStyle}>Total Cases</th>
+                    <th style={thStyle}>Within 30 Min</th>
+                    <th style={thStyle}>Delayed</th>
+                    <th style={thStyle}>Avg Time (min)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shiftStats.map((item) => (
+                    <tr key={item.shift} style={{ borderTop: "1px solid #e5e7eb" }}>
+                      <td style={tdStyle}>{item.shift}</td>
+                      <td style={tdStyle}>{item.total}</td>
+                      <td style={tdStyle}>{item.within}</td>
+                      <td style={tdStyle}>{item.delayed}</td>
+                      <td style={tdStyle}>{item.avg}m</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {view === "log" && (
+          <div style={{ padding: 28, paddingTop: 0 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>
+              Disposition Log
+            </div>
+
+            <div
+              style={{
+                background: "white",
+                borderRadius: 16,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+                overflowX: "auto",
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", textAlign: "left" }}>
                     <th style={thStyle}>Date</th>
@@ -424,6 +712,7 @@ function EDDispositionTracker() {
                     <th style={thStyle}>ED Unit</th>
                     <th style={thStyle}>Admitting Unit</th>
                     <th style={thStyle}>Disp Min</th>
+                    <th style={thStyle}>Disp H:MM:SS</th>
                     <th style={thStyle}>Delay</th>
                     <th style={thStyle}>≤30 Min</th>
                     <th style={thStyle}>Excluded</th>
@@ -431,7 +720,7 @@ function EDDispositionTracker() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...records]
+                  {[...filteredRecords]
                     .sort((a, b) => {
                       const aSec = a.createdAt?.seconds || 0;
                       const bSec = b.createdAt?.seconds || 0;
@@ -444,11 +733,14 @@ function EDDispositionTracker() {
                         <td style={tdStyle}>{record.patientId || "-"}</td>
                         <td style={tdStyle}>{record.edUnit || "-"}</td>
                         <td style={tdStyle}>{record.admittingUnit || "-"}</td>
-                        <td style={tdStyle}>{record.dispositionMinutes ?? "-"}</td>
+                        <td style={tdStyle}>
+                          {record._minutes !== null ? Math.round(record._minutes) : "-"}
+                        </td>
+                        <td style={tdStyle}>{record.dispositionHms || "-"}</td>
                         <td style={tdStyle}>{record.delayCategory || "-"}</td>
-                        <td style={tdStyle}>{record.within30Min ? "YES" : "NO"}</td>
-                        <td style={tdStyle}>{record.isExcluded ? "YES" : "NO"}</td>
-                        <td style={tdStyle}>{record.month || "-"}</td>
+                        <td style={tdStyle}>{record._within30 ? "YES" : "NO"}</td>
+                        <td style={tdStyle}>{record._excluded ? "YES" : "NO"}</td>
+                        <td style={tdStyle}>{record._month || "-"}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -742,6 +1034,95 @@ function EDDispositionTracker() {
   );
 }
 
+function Header({ title, subtitle, onAdd }) {
+  return (
+    <div
+      style={{
+        background: "white",
+        borderBottom: "1px solid #dbe4ee",
+        padding: "12px 28px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>{title}</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{subtitle}</div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+        <div style={{ color: "#16a34a", fontWeight: 700 }}>● Live</div>
+        <button onClick={onAdd} style={primaryBtn}>
+          + Add Record
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StackedUnitChart({ data }) {
+  return (
+    <div style={{ display: "flex", gap: 24, alignItems: "flex-end", height: 250, padding: "10px 20px 0" }}>
+      {data.map((item) => {
+        const max = Math.max(
+          1,
+          ...data.map((d) => d.within + d.delayed),
+          800
+        );
+        const greenHeight = ((item.within || 0) / max) * 180;
+        const redHeight = ((item.delayed || 0) / max) * 180;
+
+        return (
+          <div key={item.unit} style={{ flex: 1, textAlign: "center" }}>
+            <div
+              style={{
+                margin: "0 auto",
+                width: 72,
+                height: 180,
+                display: "flex",
+                flexDirection: "column-reverse",
+                borderRadius: 6,
+                overflow: "hidden",
+                background: "#f1f5f9",
+              }}
+            >
+              <div style={{ height: greenHeight, background: "#22c55e" }} />
+              <div style={{ height: redHeight, background: "#ef4444" }} />
+            </div>
+            <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>{item.unit}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AvgUnitChart({ data }) {
+  return (
+    <div style={{ display: "flex", gap: 18, alignItems: "flex-end", height: 250, padding: "10px 20px 0" }}>
+      {data.map((item, idx) => {
+        const colors = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
+        return (
+          <div key={item.unit} style={{ flex: 1, textAlign: "center" }}>
+            <div
+              style={{
+                margin: "0 auto",
+                width: 76,
+                height: Math.max(item.avg * 4, 10),
+                maxHeight: 180,
+                borderRadius: 6,
+                background: colors[idx % colors.length],
+              }}
+            />
+            <div style={{ marginTop: 10, color: "#64748b", fontSize: 13 }}>{item.unit}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function NavItem({ children, active = false, onClick }) {
   return (
     <div
@@ -763,11 +1144,15 @@ function NavItem({ children, active = false, onClick }) {
   );
 }
 
-function FilterBox({ label, options }) {
+function FilterBox({ label, options, value, onChange }) {
   return (
     <div>
       <div style={{ fontWeight: 700, marginBottom: 8, color: "#475569" }}>{label}</div>
-      <select style={filterInputStyle}>
+      <select
+        style={filterInputStyle}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
         {options.map((item) => (
           <option key={item}>{item}</option>
         ))}
