@@ -35,7 +35,9 @@ const SHIFT_COLORS = {
 };
 const REASON_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#0891b2", "#ec4899", "#64748b"];
 
-function EDDispositionTracker() {
+function EDDispositionTracker({ user }) {
+  const ADMIN_EMAILS = ["gh-admin@gmail.com"];
+  const isAdmin = ADMIN_EMAILS.includes(user?.email?.toLowerCase());
   const [view, setView] = useState("overview");
   const [records, setRecords] = useState([]);
   const [hoverTip, setHoverTip] = useState(null);
@@ -469,11 +471,13 @@ const csv = [
           <NavItem active={view === "shift"} onClick={() => setView("shift")}>🔄 Shift Analysis</NavItem>
           <NavItem active={view === "log"} onClick={() => setView("log")}>📋 Disposition Log</NavItem>
 
-          <div style={sectionLabel}>ACTIONS</div>
-          <NavItem active={view === "add"} onClick={() => setView("add")}>➕ Add Record</NavItem>
-          <NavItem onClick={handleExportCsv}>📥 Export CSV</NavItem>
-        </div>
-
+         {isAdmin && (
+  <>
+    <NavItem active={view === "add"} onClick={() => setView("add")}>➕ Add Record</NavItem>
+    <NavItem onClick={handleExportCsv}>📥 Export CSV</NavItem>
+  </>
+)}
+</div>
         <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <div style={{ color: "#7ea0c8", fontWeight: 700, fontSize: 13 }}>ED DISPOSITION TRACKER</div>
           <div style={{ color: "#7ea0c8", fontSize: 12, marginTop: 4 }}>
@@ -486,10 +490,11 @@ const csv = [
         {hoverTip && <Tooltip tip={hoverTip} />}
 
         <Header
-          title={getPageTitle(view)}
-          subtitle={`${selectedMonth} · ${filteredRecords.length.toLocaleString()} dispositions · King Saud Medical City`}
-          onAdd={() => setView("add")}
-        />
+  title={getPageTitle(view)}
+  subtitle={`${selectedMonth} · ${filteredRecords.length.toLocaleString()} dispositions · King Saud Medical City`}
+  onAdd={() => setView("add")}
+  isAdmin={isAdmin}
+/>
 
         {view !== "add" && (
           <div style={{ padding: 28, paddingBottom: 0 }}>
@@ -555,39 +560,39 @@ const csv = [
 
         {view === "log" && <LogPage filteredRecords={filteredRecords} />}
 
-        {view === "add" && (
-          <AddRecordPage
-            dateOfBedAllocation={dateOfBedAllocation}
-            setDateOfBedAllocation={setDateOfBedAllocation}
-            shift={shift}
-            setShift={setShift}
-            patientId={patientId}
-            setPatientId={setPatientId}
-            edUnit={edUnit}
-            setEdUnit={setEdUnit}
-            admittingUnit={admittingUnit}
-            setAdmittingUnit={setAdmittingUnit}
-            dispositionMinutes={dispositionMinutes}
-            setDispositionMinutes={setDispositionMinutes}
-            bedAllocationWhatsapp={bedAllocationWhatsapp}
-            setBedAllocationWhatsapp={setBedAllocationWhatsapp}
-            bedAllocationWatheeq={bedAllocationWatheeq}
-            setBedAllocationWatheeq={setBedAllocationWatheeq}
-            arrivalTime={arrivalTime}
-            setArrivalTime={setArrivalTime}
-            isExcluded={isExcluded}
-            setIsExcluded={setIsExcluded}
-            exclusionReason={exclusionReason}
-            setExclusionReason={setExclusionReason}
-            dispositionHms={dispositionHms}
-            whatsappDelayMinutes={whatsappDelayMinutes}
-            delayCategory={delayCategory}
-            within30Min={within30Min}
-            monthAuto={monthAuto}
-            handleSave={handleSave}
-            setView={setView}
-          />
-        )}
+        {view === "add" && isAdmin && (
+  <AddRecordPage
+    dateOfBedAllocation={dateOfBedAllocation}
+    setDateOfBedAllocation={setDateOfBedAllocation}
+    shift={shift}
+    setShift={setShift}
+    patientId={patientId}
+    setPatientId={setPatientId}
+    edUnit={edUnit}
+    setEdUnit={setEdUnit}
+    admittingUnit={admittingUnit}
+    setAdmittingUnit={setAdmittingUnit}
+    dispositionMinutes={dispositionMinutes}
+    setDispositionMinutes={setDispositionMinutes}
+    bedAllocationWhatsapp={bedAllocationWhatsapp}
+    setBedAllocationWhatsapp={setBedAllocationWhatsapp}
+    bedAllocationWatheeq={bedAllocationWatheeq}
+    setBedAllocationWatheeq={setBedAllocationWatheeq}
+    arrivalTime={arrivalTime}
+    setArrivalTime={setArrivalTime}
+    isExcluded={isExcluded}
+    setIsExcluded={setIsExcluded}
+    exclusionReason={exclusionReason}
+    setExclusionReason={setExclusionReason}
+    dispositionHms={dispositionHms}
+    whatsappDelayMinutes={whatsappDelayMinutes}
+    delayCategory={delayCategory}
+    within30Min={within30Min}
+    monthAuto={monthAuto}
+    handleSave={handleSave}
+    setView={setView}
+  />
+)}
       </main>
     </div>
   );
@@ -1068,7 +1073,7 @@ function makeTip(event, title, lines) {
   return { x: event.clientX, y: event.clientY, title, lines };
 }
 
-function Header({ title, subtitle, onAdd }) {
+function Header({ title, subtitle, onAdd, isAdmin }) {
   return (
     <div style={{ background: "white", borderBottom: "1px solid #dbe4ee", padding: "12px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <div>
@@ -1077,7 +1082,9 @@ function Header({ title, subtitle, onAdd }) {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
         <div style={{ color: "#16a34a", fontWeight: 700 }}>● Live</div>
-        <button onClick={onAdd} style={primaryBtn}>+ Add Record</button>
+        {isAdmin && (
+  <button onClick={onAdd} style={primaryBtn}>+ Add Record</button>
+)}
       </div>
     </div>
   );
