@@ -336,15 +336,27 @@ function EDDispositionTracker({ user }) {
   }, [validMinuteRecords]);
 
   const monthStats = useMemo(() => {
-    return MONTH_OPTIONS.map((m) => {
-      const monthRecords = validMinuteRecords.filter((r) => r._month === m);
-      const total = monthRecords.length;
-      const within = monthRecords.filter((r) => r._within30).length;
-      const delayed = monthRecords.filter((r) => r._minutes > 30).length;
-      const avg = total ? Math.round(monthRecords.reduce((sum, r) => sum + r._minutes, 0) / total) : 0;
-      return { month: m, total, within, delayed, avg, compliancePct: total ? (within / total) * 100 : 0 };
-    }).filter((m) => m.total > 0);
-  }, [validMinuteRecords]);
+  return ["FEBRUARY", "MARCH", "APRIL"].map((m) => {
+    const monthRecords = filteredRecords.filter((r) => r._month === m);
+    const validRecords = monthRecords.filter((r) => r._minutes !== null);
+
+    const total = monthRecords.length;
+    const within = validRecords.filter((r) => r._within30).length;
+    const delayed = validRecords.filter((r) => r._minutes > 30).length;
+    const avg = validRecords.length
+      ? Math.round(validRecords.reduce((sum, r) => sum + r._minutes, 0) / validRecords.length)
+      : 0;
+
+    return {
+      month: m,
+      total,
+      within,
+      delayed,
+      avg,
+      compliancePct: validRecords.length ? (within / validRecords.length) * 100 : 0,
+    };
+  });
+}, [filteredRecords]);
 
   const exclusionReasonStats = useMemo(() => {
     const excluded = filteredRecords.filter((r) => r._excluded);
