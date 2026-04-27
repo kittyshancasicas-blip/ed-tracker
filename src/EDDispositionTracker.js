@@ -6,7 +6,6 @@ import {
   collection,
   onSnapshot,
   query,
-  where,
   serverTimestamp,
   doc,
   updateDoc,
@@ -14,6 +13,22 @@ import {
 } from "firebase/firestore";
 
 const UNIT_OPTIONS = ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"];
+
+const ADMITTING_UNIT_OPTIONS = [
+  "100D",
+  "200A", "200B", "200D", "200G", "200H", "200L", "200OR",
+  "300A", "300B", "300D", "300G", "300H", "300L", "300M", "300OR",
+  "400A", "400B", "400D", "400G", "400L",
+  "500A", "500B", "500D", "500G", "500H - ENDOSCOPY", "500M",
+  "T1A1", "T1A2", "T1A4", "T1A5", "T1A6",
+  "T1B1", "T1B2", "T1B4", "T1B5", "T1B6",
+  "TRAUMA", "CCU", "CICU",
+  "EEG", "CT SCAN", "NUCLEAR MEDICINE", "XRAY",
+  "CATH LAB", "INTERVENTIONAL RADIOLOGY (IR)", "VAST",
+  "PACU", "HMU",
+  "MATERNITY-ER", "MATERNITY OR", "PEDIA-ER", "PEDIA",
+  "OR-DIGITAL"
+];
 const SHIFT_OPTIONS = ["MORNING", "EVENING", "NIGHT"];
 const MONTH_OPTIONS = [
   "JANUARY",
@@ -66,10 +81,7 @@ function EDDispositionTracker({ user }) {
   const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
-    const q = query(
-      collection(db, "records"),
-      where("month", "in", ["FEBRUARY", "MARCH", "APRIL"])
-    );
+    const q = query(collection(db, "records"));
 
     const unsubscribe = onSnapshot(
       q,
@@ -597,13 +609,6 @@ return (
           />
         )}
 
-        {view === "admitting" && (
-  <AdmittingUnitDashboard
-    admittingUnitStats={admittingUnitStats}
-    setHoverTip={setHoverTip}
-  />
-)}
-
         {view === "compliance" && (
           <ComplianceDashboard
             cards={cards}
@@ -929,16 +934,16 @@ function LogPage({ filteredRecords, isAdmin, handleEdit, handleDelete, searchTex
 
   return [
     record.dateOfBedAllocation,
-    record.shift,
+    record._shift,
     record.patientId,
-    record.edUnit,
+    record._unit,
     record.admittingUnit,
-    record.dispositionMinutes,
+    record._minutes,
     record.delayCategory,
-    record.within30Min ? "yes" : "no",
-    record.isExcluded ? "yes" : "no",
-    record.exclusionReason,
-    record.month,
+    record._within30 ? "yes" : "no",
+    record._excluded ? "yes" : "no",
+    record._exclusionReason,
+    record._month,
   ]
     .join(" ")
     .toLowerCase()
@@ -1047,7 +1052,19 @@ function AddRecordPage(props) {
             <Field label="SHIFT *"><select value={props.shift} onChange={(e) => props.setShift(e.target.value)} style={inputStyle}>{SHIFT_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></Field>
             <Field label="PATIENT ID *"><input type="text" value={props.patientId} onChange={(e) => props.setPatientId(e.target.value)} placeholder="e.g. 110000356396" style={inputStyle} /></Field>
             <Field label="ED UNIT *"><select value={props.edUnit} onChange={(e) => props.setEdUnit(e.target.value)} style={inputStyle}>{UNIT_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></Field>
-            <Field label="ADMITTING UNIT *"><select value={props.admittingUnit} onChange={(e) => props.setAdmittingUnit(e.target.value)} style={inputStyle}>{["T1A5", "T1A1", "T1B1", "T1A6", "300G", "300B", "300D", "200A", "ONCO"].map((item) => <option key={item}>{item}</option>)}</select></Field>
+            <Field label="ADMITTING UNIT *">
+  <select
+    value={props.admittingUnit}
+    onChange={(e) => props.setAdmittingUnit(e.target.value)}
+    style={inputStyle}
+  >
+    {ADMITTING_UNIT_OPTIONS.map((item) => (
+      <option key={item} value={item}>
+        {item}
+      </option>
+    ))}
+  </select>
+</Field>
             <Field label="DISPOSITION TIME (MINUTES) *"><input type="number" value={props.dispositionMinutes} onChange={(e) => props.setDispositionMinutes(e.target.value)} placeholder="e.g. 25" style={inputStyle} /></Field>
             <Field label="BED ALLOCATION TIME (WHATSAPP)"><input type="time" value={props.bedAllocationWhatsapp} onChange={(e) => props.setBedAllocationWhatsapp(e.target.value)} style={inputStyle} /></Field>
             <Field label="BED ALLOCATION TIME (WATHEEQ)"><input type="time" value={props.bedAllocationWatheeq} onChange={(e) => props.setBedAllocationWatheeq(e.target.value)} style={inputStyle} /></Field>
