@@ -7,6 +7,8 @@ const {
   deleteDoc,
   doc,
   setDoc,
+  query,
+  where,
 } = require("firebase/firestore");
 
 const firebaseConfig = {
@@ -38,6 +40,11 @@ function excelDate(v) {
     return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
   }
 
+  const d = new Date(v);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split("T")[0];
+  }
+
   return clean(v);
 }
 
@@ -46,7 +53,7 @@ function timeValue(v) {
 
   if (typeof v === "number") {
     const totalMinutes = Math.round(v * 24 * 60);
-    const h = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+    const h = String(Math.floor(totalMinutes / 60) % 24).padStart(2, "0");
     const m = String(totalMinutes % 60).padStart(2, "0");
     return `${h}:${m}`;
   }
@@ -73,40 +80,38 @@ function minutesValue(v) {
   return Number.isFinite(n) ? Math.round(n) : 0;
 }
 
-function normalizeUnit(value) {
-  const text = clean(value).toUpperCase().replace(/\s+/g, " ");
-
-  const unitMap = {
-    CCA: "CCA",
-    CCB: "CCB",
-    CCC: "CCC",
-    CCD: "CCD",
-    TRIAGE: "Triage/Pulmo",
-    PULMO: "Triage/Pulmo",
-    "TRIAGE/PULMO": "Triage/Pulmo",
-    "TRIAGE / PULMO": "Triage/Pulmo",
-    "TRIAGE PULMO": "Triage/Pulmo",
-  };
-
-  return unitMap[text] || clean(value);
+function toHms(mins) {
+  const total = Number(mins || 0);
+  const hh = String(Math.floor(total / 60)).padStart(2, "0");
+  const mm = String(total % 60).padStart(2, "0");
+  return `${hh}:${mm}:00`;
 }
 
-async function deleteExisting() {
-  const snap = await getDocs(collection(db, "records"));
-  console.log(`Deleting ${snap.size} existing records...`);
+function normalizeUnit(value) {
+  const text = clean(value).toUpperCase();
 
-  let deleted = 0;
+  if (text.includes("TRIAGE") || text.includes("PULMO")) return "Triage/Pulmo";
+  if (["CCA", "CCB", "CCC", "CCD"].includes(text)) return text;
 
+  return clean(value);
+}
+
+async function deleteFebToAprilOnly() {
+  const q = query(
+    collection(db, "records"),
+    where("month", "in", SHEETS)
+  );
+
+  const snap = await getDocs(q);
+  console.log(`Deleting ${snap.size} February-April records only...`);
+
+  let count = 0;
   for (const item of snap.docs) {
     await deleteDoc(doc(db, "records", item.id));
-    deleted++;
-
-    if (deleted % 100 === 0) {
-      console.log(`Deleted ${deleted}`);
-    }
+    count++;
   }
 
-  console.log(`Done deleting ${deleted}`);
+  console.log(`Deleted ${count} old Feb-Apr records.`);
 }
 
 async function importData() {
@@ -121,47 +126,49 @@ async function importData() {
       continue;
     }
 
-    const rows = XLSX.utils
-      .sheet_to_json(sheet, {
-        header: 1,
-        defval: "",
-        raw: true,
-      })
-      .map((row) => row.slice(0, 16)); // Columns A:P only
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: "",
+      raw: true,
+    });
 
     let sheetCount = 0;
 
     for (const row of rows) {
-      // Correct Excel mapping:
-      // A = Shift
-      // B = Patient ID
-      // C = ED Unit
-      // D = Admitting Unit
-      // E = Date of Bed Allocation
-      // F = Bed Allocation Whatsapp
-      // G = Bed Allocation Watheeq
-      // H = Arrival Time
-      // I = Disposition Minutes
-      // P = Exclusion Reason
+      // A to O only
+      const shift = clean(row[0]).toUpperCase();              // A
+      const patientId = clean(row[1]);                        // B
+      const edUnit = normalizeUnit(row[2]);                   // C
+      const admittingUnit = clean(row[3]);                    // D
+      const dateOfBedAllocation = excelDate(row[4]);          // E
+      const bedAllocationWhatsapp = timeValue(row[5]);        // F
+      const bedAllocationWatheeq = timeValue(row[6]);         // G
+      const arrivalTime = timeValue(row[7]);                  // H
 
-      const shift = clean(row[0]).toUpperCase();
-      const patientId = clean(row[1]);
-      const edUnit = normalizeUnit(row[2]);
-      const admittingUnit = clean(row[3]);
-      const dateOfBedAllocation = excelDate(row[4]);
-      const bedAllocationWhatsapp = timeValue(row[5]);
-      const bedAllocationWatheeq = timeValue(row[6]);
-      const arrivalTime = timeValue(row[7]);
-      const dispositionMinutes = minutesValue(row[8]);
-      const exclusionReason = clean(row[15]);
+      // Based on your sheet, disposition minutes is Column J
+      const dispositionMinutes = minutesValue(row[9]);        // J
 
-      // Skip header and blank rows
+      const within30Text = clean(row[10]).toUpperCase();      // K
+      const comments = clean(row[13]);                        // N
+      const excludedFlag = clean(row[14]).toUpperCase();      // O
+
       if (!shift || shift === "SHIFT") continue;
       if (!patientId || patientId.toUpperCase() === "PATIENT ID") continue;
       if (!edUnit || edUnit.toUpperCase() === "ED UNIT") continue;
 
-      const isExcluded = exclusionReason !== "";
-      const within30Min = dispositionMinutes <= 30;
+      const isExcluded =
+        excludedFlag === "EXCLUDED" ||
+        excludedFlag === "YES" ||
+        excludedFlag === "TRUE";
+
+      const exclusionReason = isExcluded ? comments || "EXCLUDED" : "";
+
+      const within30Min =
+        within30Text === "YES"
+          ? true
+          : within30Text === "NO"
+          ? false
+          : dispositionMinutes <= 30;
 
       const delayCategory =
         dispositionMinutes <= 30
@@ -179,34 +186,40 @@ async function importData() {
         patientId,
         edUnit,
         admittingUnit,
+
         bedAllocationWhatsapp,
         bedAllocationWatheeq,
         arrivalTime,
+
         dispositionMinutes,
-        dispositionHms: "",
+        dispositionHms: toHms(dispositionMinutes),
         whatsappDelayMinutes: 0,
+
         delayCategory,
+        within30Min,
+
         isExcluded,
         exclusionReason,
-        within30Min,
+        comments,
+        excludedFlag,
+
         month: sheetName,
         sourceSheet: sheetName,
       });
 
-      if (total % 50 === 0) {
+      if (total % 100 === 0) {
         console.log(`Imported ${total}`);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
 
     console.log(`${sheetName}: imported ${sheetCount}`);
   }
 
-  console.log(`Done importing ${total} records with correct dashboard mapping.`);
+  console.log(`DONE. Imported ${total} Feb-Apr records from columns A to O.`);
 }
 
 async function run() {
-  await deleteExisting();
+  await deleteFebToAprilOnly();
   await importData();
 }
 

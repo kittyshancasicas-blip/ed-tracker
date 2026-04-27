@@ -8,6 +8,9 @@ import {
   query,
   where,
   serverTimestamp,
+  doc,
+  updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 
 const UNIT_OPTIONS = ["CCA", "CCB", "CCC", "CCD", "Triage/Pulmo"];
@@ -45,6 +48,7 @@ function EDDispositionTracker({ user }) {
   const [selectedShift, setSelectedShift] = useState("All shifts");
   const [selectedUnit, setSelectedUnit] = useState("All units");
   const [selectedMonth, setSelectedMonth] = useState("All months");
+  const [searchText, setSearchText] = useState("");
 
   const [dateOfBedAllocation, setDateOfBedAllocation] = useState(
     new Date().toISOString().split("T")[0]
@@ -59,6 +63,7 @@ function EDDispositionTracker({ user }) {
   const [arrivalTime, setArrivalTime] = useState("");
   const [isExcluded, setIsExcluded] = useState(false);
   const [exclusionReason, setExclusionReason] = useState("");
+  const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
     const q = query(
@@ -188,6 +193,30 @@ function EDDispositionTracker({ user }) {
     () => filteredRecords.filter((r) => r._minutes !== null),
     [filteredRecords]
   );
+  const admittingUnitStats = useMemo(() => {
+  const map = new Map();
+
+  validMinuteRecords.forEach((record) => {
+    const unit = record.admittingUnit || "Unspecified";
+
+    if (!map.has(unit)) {
+      map.set(unit, { admittingUnit: unit, total: 0, within: 0, delayed: 0 });
+    }
+
+    const item = map.get(unit);
+    item.total += 1;
+
+    if (record._within30) item.within += 1;
+    else item.delayed += 1;
+  });
+
+  return Array.from(map.values())
+    .map((item) => ({
+      ...item,
+      compliancePct: item.total ? (item.within / item.total) * 100 : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+}, [validMinuteRecords]);
 
   const totalAdmissions = filteredRecords.length;
   const within30 = validMinuteRecords.filter((r) => r._within30).length;
@@ -353,48 +382,81 @@ function EDDispositionTracker({ user }) {
   }, [totalAdmissions, within30, delayedOver30, complianceByUnit, shiftStats]);
 
   const handleSave = async () => {
-    try {
-      const newRecord = {
-        dateOfBedAllocation,
-        shift,
-        patientId,
-        edUnit,
-        admittingUnit,
-        dispositionMinutes: Number(dispositionMinutes || 0),
-        bedAllocationWhatsapp,
-        bedAllocationWatheeq,
-        arrivalTime,
-        dispositionHms,
-        whatsappDelayMinutes,
-        delayCategory,
-        isExcluded,
-        exclusionReason,
-        within30Min,
-        month: monthAuto,
-        createdAt: serverTimestamp(),
-      };
+  try {
+    const newRecord = {
+      dateOfBedAllocation,
+      shift,
+      patientId,
+      edUnit,
+      admittingUnit,
+      dispositionMinutes: Number(dispositionMinutes || 0),
+      bedAllocationWhatsapp,
+      bedAllocationWatheeq,
+      arrivalTime,
+      dispositionHms,
+      whatsappDelayMinutes,
+      delayCategory,
+      isExcluded,
+      exclusionReason,
+      within30Min,
+      month: monthAuto,
+      createdAt: serverTimestamp(),
+    };
 
+    if (editingId) {
+      await updateDoc(doc(db, "records", editingId), newRecord);
+      alert("Record updated!");
+      setEditingId(null);
+    } else {
       await addDoc(collection(db, "records"), newRecord);
       alert("Record saved!");
-
-      setPatientId("");
-      setDispositionMinutes("");
-      setBedAllocationWhatsapp("");
-      setBedAllocationWatheeq("");
-      setArrivalTime("");
-      setIsExcluded(false);
-      setExclusionReason("");
-      setShift("MORNING");
-      setEdUnit("CCA");
-      setAdmittingUnit("T1A5");
-      setDateOfBedAllocation(new Date().toISOString().split("T")[0]);
-      setView("overview");
-    } catch (error) {
-      console.error("Error saving record:", error);
-      alert("Error saving record");
     }
-  };
 
+    setPatientId("");
+    setDispositionMinutes("");
+    setBedAllocationWhatsapp("");
+    setBedAllocationWatheeq("");
+    setArrivalTime("");
+    setIsExcluded(false);
+    setExclusionReason("");
+    setShift("MORNING");
+    setEdUnit("CCA");
+    setAdmittingUnit("T1A5");
+    setDateOfBedAllocation(new Date().toISOString().split("T")[0]);
+    setView("overview");
+  } catch (error) {
+    console.error("Error saving record:", error);
+    alert("Error saving record");
+  }
+};
+const handleEdit = (record) => {
+  setEditingId(record.id);
+
+  setDateOfBedAllocation(record.dateOfBedAllocation || new Date().toISOString().split("T")[0]);
+  setShift(record.shift || "MORNING");
+  setPatientId(record.patientId || "");
+  setEdUnit(record.edUnit || "CCA");
+  setAdmittingUnit(record.admittingUnit || "T1A5");
+  setDispositionMinutes(record._minutes || record.dispositionMinutes || "");
+  setBedAllocationWhatsapp(record.bedAllocationWhatsapp || "");
+  setBedAllocationWatheeq(record.bedAllocationWatheeq || "");
+  setArrivalTime(record.arrivalTime || "");
+  setIsExcluded(record._excluded || false);
+  setExclusionReason(record._exclusionReason || record.exclusionReason || "");
+
+  setView("add");
+};
+
+const handleDeleteRecord = async (recordId) => {
+  if (!window.confirm("Delete this record?")) return;
+
+  try {
+    await deleteDoc(doc(db, "records", recordId));
+    alert("Deleted!");
+  } catch (err) {
+    alert("Error deleting");
+  }
+};
   const handleExportCsv = () => {
     if (!filteredRecords.length) {
       alert("No records to export.");
@@ -445,11 +507,11 @@ const csv = [
     link.href = url;
     link.setAttribute("download", "ed_disposition_records.csv");
     document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+link.click();
+document.body.removeChild(link);
+};
 
-  return (
+return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#eef3f8" }}>
       <aside style={sidebarStyle}>
         <div>
@@ -470,6 +532,9 @@ const csv = [
           <NavItem active={view === "unit"} onClick={() => setView("unit")}>🏥 Unit Performance</NavItem>
           <NavItem active={view === "shift"} onClick={() => setView("shift")}>🔄 Shift Analysis</NavItem>
           <NavItem active={view === "log"} onClick={() => setView("log")}>📋 Disposition Log</NavItem>
+          <NavItem active={view === "admitting"} onClick={() => setView("admitting")}>
+  🏨 Admitting Units
+</NavItem>
 
          {isAdmin && (
   <>
@@ -520,6 +585,13 @@ const csv = [
           />
         )}
 
+        {view === "admitting" && (
+  <AdmittingUnitDashboard
+    admittingUnitStats={admittingUnitStats}
+    setHoverTip={setHoverTip}
+  />
+)}
+
         {view === "compliance" && (
           <ComplianceDashboard
             cards={cards}
@@ -558,7 +630,23 @@ const csv = [
           <ShiftDashboard shiftStats={shiftStats} monthStats={monthStats} validMinuteRecords={validMinuteRecords} setHoverTip={setHoverTip} />
         )}
 
-        {view === "log" && <LogPage filteredRecords={filteredRecords} />}
+{view === "admitting" && (
+  <AdmittingUnitDashboard
+    admittingUnitStats={admittingUnitStats}
+    setHoverTip={setHoverTip}
+  />
+)}
+
+        {view === "log" && (
+  <LogPage
+    filteredRecords={filteredRecords}
+    isAdmin={isAdmin}
+    handleEdit={handleEdit}
+    handleDelete={handleDeleteRecord}
+    searchText={searchText}
+    setSearchText={setSearchText}
+  />
+)}
 
         {view === "add" && isAdmin && (
   <AddRecordPage
@@ -591,6 +679,7 @@ const csv = [
     monthAuto={monthAuto}
     handleSave={handleSave}
     setView={setView}
+    editingId={editingId}
   />
 )}
       </main>
@@ -605,6 +694,7 @@ function getPageTitle(view) {
   if (view === "shift") return "Shift Analysis Trend";
   if (view === "log") return "Disposition Log";
   if (view === "add") return "Add Record";
+  if (view === "admitting") return "Admitting Unit Performance";
   return "ED Disposition Monitor";
 }
 
@@ -784,24 +874,117 @@ function ShiftDashboard({ shiftStats, monthStats, validMinuteRecords, setHoverTi
     </div>
   );
 }
-
-function LogPage({ filteredRecords }) {
+function AdmittingUnitDashboard({ admittingUnitStats, setHoverTip }) {
   return (
     <div style={{ padding: 28, paddingTop: 0 }}>
-      <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Disposition Log</div>
+      <ChartBox
+        title="Admitting Unit Total Cases & ≤30 Min Compliance"
+        subtitle="Shows total cases and percentage within 30 minutes"
+      >
+        <PercentBarChart
+          data={admittingUnitStats}
+          labelKey="admittingUnit"
+          valueKey="compliancePct"
+          countKey="total"
+          setHoverTip={setHoverTip}
+        />
+      </ChartBox>
+
+      <div style={{ marginTop: 22 }}>
+        <DataTable
+          headers={[
+            "Admitting Unit",
+            "Total Cases",
+            "Within 30 Min",
+            "Delayed",
+            "Compliance %",
+          ]}
+          rows={admittingUnitStats.map((item) => [
+            item.admittingUnit,
+            item.total.toLocaleString(),
+            item.within.toLocaleString(),
+            item.delayed.toLocaleString(),
+            `${item.compliancePct.toFixed(1)}%`,
+          ])}
+        />
+      </div>
+    </div>
+  );
+}
+function LogPage({ filteredRecords, isAdmin, handleEdit, handleDelete, searchText, setSearchText }) {
+  const searchedRecords = filteredRecords.filter((record) => {
+  const keyword = searchText.toLowerCase();
+
+  return [
+    record.dateOfBedAllocation,
+    record.shift,
+    record.patientId,
+    record.edUnit,
+    record.admittingUnit,
+    record.dispositionMinutes,
+    record.delayCategory,
+    record.within30Min ? "yes" : "no",
+    record.isExcluded ? "yes" : "no",
+    record.exclusionReason,
+    record.month,
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(keyword);
+});
+  return (
+    <div style={{ padding: 28, paddingTop: 0 }}>
+      <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 16 }}>Disposition Log</div>
+      <input
+  type="text"
+  placeholder="Search patient, unit, shift, reason..."
+  value={searchText}
+  onChange={(e) => setSearchText(e.target.value)}
+  style={{
+    width: "100%",
+    maxWidth: 500,
+    height: 44,
+    borderRadius: 10,
+    border: "1px solid #cbd5e1",
+    padding: "0 14px",
+    fontSize: 15,
+    marginBottom: 16,
+  }}
+/>
       <div style={{ background: "white", borderRadius: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
           <thead>
             <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-              {["Date", "Shift", "Patient ID", "ED Unit", "Admitting Unit", "Disp Min", "Disp H:MM:SS", "Delay", "≤30 Min", "Excluded", "Reason", "Month"].map((header) => (
-                <th key={header} style={thStyle}>{header}</th>
+              {[
+                "Date",
+                "Shift",
+                "Patient ID",
+                "ED Unit",
+                "Admitting Unit",
+                "Disp Min",
+                "Disp H:MM:SS",
+                "Delay",
+                "≤30 Min",
+                "Excluded",
+                "Reason",
+                "Month",
+                ...(isAdmin ? ["Actions"] : []),
+              ].map((header) => (
+              <th key={header} style={thStyle}>{header}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {[...filteredRecords]
-              .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-              .map((record) => (
+            {[...searchedRecords]
+  .sort((a, b) => {
+    const dateA = new Date(a.dateOfBedAllocation || "1900-01-01").getTime();
+    const dateB = new Date(b.dateOfBedAllocation || "1900-01-01").getTime();
+
+    if (dateB !== dateA) return dateB - dateA;
+
+    return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+  })
+  .map((record) => (
                 <tr key={record.id} style={{ borderTop: "1px solid #e5e7eb" }}>
                   <td style={tdStyle}>{record.dateOfBedAllocation || "-"}</td>
                   <td style={tdStyle}>{record.shift || "-"}</td>
@@ -815,6 +998,12 @@ function LogPage({ filteredRecords }) {
                   <td style={tdStyle}>{record._excluded ? "YES" : "NO"}</td>
                   <td style={tdStyle}>{record._excluded ? record._exclusionReason : "-"}</td>
                   <td style={tdStyle}>{record._month || "-"}</td>
+                  {isAdmin && (
+  <td style={tdStyle}>
+    <button onClick={() => handleEdit(record)}>✏️</button>
+    <button onClick={() => handleDelete(record.id)}>🗑️</button>
+  </td>
+)}
                 </tr>
               ))}
           </tbody>
@@ -829,10 +1018,14 @@ function AddRecordPage(props) {
     <div>
       <div style={{ background: "white", borderBottom: "1px solid #dbe4ee", padding: "16px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>Add Record</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>
+  {props.editingId ? "Edit Record" : "Add Record"}
+</div>
           <div style={{ color: "#64748b", marginTop: 4 }}>Enter a new ED disposition record</div>
         </div>
-        <button onClick={props.handleSave} style={primaryBtn}>+ Save Record</button>
+        <button onClick={props.handleSave} style={primaryBtn}>
+  {props.editingId ? "Update Record" : "+ Save Record"}
+</button>
       </div>
 
       <div style={{ padding: 28 }}>
