@@ -64,6 +64,22 @@ function EDDispositionTracker({ user }) {
   const [selectedUnit, setSelectedUnit] = useState("All units");
   const [selectedMonth, setSelectedMonth] = useState("All months");
   const [searchText, setSearchText] = useState("");
+  const calculateMinutesInterval = (startTime, endTime) => {
+  if (!startTime || !endTime) return "";
+
+  const [startHour, startMinute] = startTime.split(":").map(Number);
+  const [endHour, endMinute] = endTime.split(":").map(Number);
+
+  let startTotal = startHour * 60 + startMinute;
+  let endTotal = endHour * 60 + endMinute;
+
+  // If arrival time is after midnight
+  if (endTotal < startTotal) {
+    endTotal += 24 * 60;
+  }
+
+  return endTotal - startTotal;
+};
 
   const [dateOfBedAllocation, setDateOfBedAllocation] = useState(
     new Date().toISOString().split("T")[0]
@@ -76,6 +92,15 @@ function EDDispositionTracker({ user }) {
   const [bedAllocationWhatsapp, setBedAllocationWhatsapp] = useState("");
   const [bedAllocationWatheeq, setBedAllocationWatheeq] = useState("");
   const [arrivalTime, setArrivalTime] = useState("");
+  useEffect(() => {
+  if (bedAllocationWatheeq && arrivalTime) {
+    const minutes = calculateMinutesInterval(
+      bedAllocationWatheeq,
+      arrivalTime
+    );
+    setDispositionMinutes(minutes);
+  }
+}, [bedAllocationWatheeq, arrivalTime]);
   const [isExcluded, setIsExcluded] = useState(false);
   const [exclusionReason, setExclusionReason] = useState("");
   const [editingId, setEditingId] = useState(null);
