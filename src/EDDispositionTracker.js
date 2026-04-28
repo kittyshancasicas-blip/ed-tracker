@@ -432,13 +432,17 @@ function EDDispositionTracker({ user }) {
 
   const handleSave = async () => {
   try {
+    const autoMinutes = calculateMinutesInterval(
+  bedAllocationWatheeq,
+  arrivalTime
+);
     const newRecord = {
       dateOfBedAllocation,
       shift,
       patientId,
       edUnit,
       admittingUnit,
-      dispositionMinutes: Number(dispositionMinutes || 0),
+      dispositionMinutes: Number(autoMinutes || 0),
       bedAllocationWhatsapp,
       bedAllocationWatheeq,
       arrivalTime,
@@ -447,7 +451,7 @@ function EDDispositionTracker({ user }) {
       delayCategory,
       isExcluded,
       exclusionReason,
-      within30Min,
+      within30Min: Number(autoMinutes || 0) <= 30,
       month: monthAuto,
       createdAt: serverTimestamp(),
     };
